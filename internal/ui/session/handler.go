@@ -5,7 +5,7 @@ import (
 	"github.com/charmbracelet/ssh"
 	wishtea "github.com/charmbracelet/wish/bubbletea"
 
-	"terminalchess/internal/ui/screens/terminfo"
+	"terminalchess/internal/ui/root"
 )
 
 func TeaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
@@ -15,20 +15,17 @@ func TeaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	renderer := wishtea.MakeRenderer(s)
 
 	info := ExtractTerminalInfo(renderer, pty)
-
 	styles := NewStyles(renderer)
 
-	m := terminfo.NewModel(
-		terminfo.Props{
-			Term:      info.Term,
-			Profile:   info.Profile,
-			Width:     info.Width,
-			Height:    info.Height,
-			BG:        info.BG,
-			TxtStyle:  styles.Txt,
-			QuitStyle: styles.Quit,
-		},
-	)
+	m := root.New(root.Props{
+		Term:      info.Term,
+		Profile:   info.Profile,
+		Width:     info.Width,
+		Height:    info.Height,
+		BG:        info.BG,
+		TxtStyle:  styles.Txt,
+		QuitStyle: styles.Quit,
+	})
 
 	return m, []tea.ProgramOption{tea.WithAltScreen()}
 }

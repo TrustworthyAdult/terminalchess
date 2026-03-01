@@ -13,16 +13,11 @@ func TeaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	pty, _, _ := s.Pty()
 
 	renderer := wishtea.MakeRenderer(s)
-
-	info := ExtractTerminalInfo(renderer, pty)
 	styles := NewStyles(renderer)
 
 	m := root.New(root.Props{
-		Term:      info.Term,
-		Profile:   info.Profile,
-		Width:     info.Width,
-		Height:    info.Height,
-		BG:        info.BG,
+		Width:     pty.Window.Width,
+		Height:    pty.Window.Height,
 		TxtStyle:  styles.Txt,
 		QuitStyle: styles.Quit,
 	})

@@ -32,7 +32,6 @@ type Model struct {
 func NewModel(p Props) Model {
 	items := []list.Item{
 		item{title: "Play Game", dest: navigate.Game},
-		item{title: "Terminal Info", dest: navigate.TermInfo},
 		item{title: "Quit", quit: true},
 	}
 

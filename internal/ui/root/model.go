@@ -7,15 +7,11 @@ import (
 	"terminalchess/internal/ui/navigate"
 	"terminalchess/internal/ui/screens/game"
 	"terminalchess/internal/ui/screens/menu"
-	"terminalchess/internal/ui/screens/terminfo"
 )
 
 type Props struct {
-	Term      string
-	Profile   string
 	Width     int
 	Height    int
-	BG        string
 	TxtStyle  lipgloss.Style
 	QuitStyle lipgloss.Style
 }
@@ -56,16 +52,6 @@ func (m Model) makeScreen(s navigate.Screen) tea.Model {
 	switch s {
 	case navigate.Game:
 		return game.NewModel(game.Props{
-			TxtStyle:  p.TxtStyle,
-			QuitStyle: p.QuitStyle,
-		})
-	case navigate.TermInfo:
-		return terminfo.NewModel(terminfo.Props{
-			Term:      p.Term,
-			Profile:   p.Profile,
-			Width:     p.Width,
-			Height:    p.Height,
-			BG:        p.BG,
 			TxtStyle:  p.TxtStyle,
 			QuitStyle: p.QuitStyle,
 		})

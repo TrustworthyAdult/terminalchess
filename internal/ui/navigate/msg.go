@@ -7,7 +7,6 @@ type Screen int
 const (
 	Menu Screen = iota
 	Game
-	TermInfo
 )
 
 type Msg struct{ To Screen }

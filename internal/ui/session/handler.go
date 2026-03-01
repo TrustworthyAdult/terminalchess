@@ -6,6 +6,7 @@ import (
 	wishtea "github.com/charmbracelet/wish/bubbletea"
 
 	"terminalchess/internal/ui/root"
+	"terminalchess/internal/ui/styles"
 )
 
 func TeaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
@@ -13,13 +14,11 @@ func TeaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	pty, _, _ := s.Pty()
 
 	renderer := wishtea.MakeRenderer(s)
-	styles := NewStyles(renderer)
 
 	m := root.New(root.Props{
-		Width:     pty.Window.Width,
-		Height:    pty.Window.Height,
-		TxtStyle:  styles.Txt,
-		QuitStyle: styles.Quit,
+		Width:  pty.Window.Width,
+		Height: pty.Window.Height,
+		Styles: styles.New(renderer),
 	})
 
 	return m, []tea.ProgramOption{tea.WithAltScreen()}

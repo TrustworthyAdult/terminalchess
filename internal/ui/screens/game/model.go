@@ -1,24 +1,23 @@
 package game
 
 import (
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"terminalchess/internal/ui/navigate"
+	"terminalchess/internal/ui/styles"
 )
 
 type Props struct {
-	TxtStyle  lipgloss.Style
-	QuitStyle lipgloss.Style
+	Styles styles.Styles
 }
 
 type Model struct {
-	txtStyle  lipgloss.Style
-	quitStyle lipgloss.Style
+	styles styles.Styles
 }
 
 func NewModel(p Props) Model {
-	return Model{txtStyle: p.TxtStyle, quitStyle: p.QuitStyle}
+	return Model{styles: p.Styles}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -36,6 +35,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	return m.txtStyle.Render("Chess game coming soon...") +
-		"\n\n" + m.quitStyle.Render("Press 'esc' to return to menu")
+	s := m.styles
+
+	content := lipgloss.JoinVertical(lipgloss.Center,
+		s.Body.Render("Chess game coming soon..."),
+		"",
+		s.Hint.Render("esc  go back"),
+	)
+
+	return s.Panel.Render(content)
 }

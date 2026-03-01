@@ -1,19 +1,19 @@
 package root
 
 import (
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"terminalchess/internal/ui/navigate"
 	"terminalchess/internal/ui/screens/game"
 	"terminalchess/internal/ui/screens/menu"
+	"terminalchess/internal/ui/styles"
 )
 
 type Props struct {
-	Width     int
-	Height    int
-	TxtStyle  lipgloss.Style
-	QuitStyle lipgloss.Style
+	Width  int
+	Height int
+	Styles styles.Styles
 }
 
 type Model struct {
@@ -45,22 +45,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) View() string { return m.current.View() }
+func (m Model) View() string {
+	return lipgloss.Place(
+		m.props.Width,
+		m.props.Height,
+		lipgloss.Center,
+		lipgloss.Center,
+		m.current.View(),
+	)
+}
 
 func (m Model) makeScreen(s navigate.Screen) tea.Model {
-	p := m.props
 	switch s {
 	case navigate.Game:
-		return game.NewModel(game.Props{
-			TxtStyle:  p.TxtStyle,
-			QuitStyle: p.QuitStyle,
-		})
+		return game.NewModel(game.Props{Styles: m.props.Styles})
 	default: // navigate.Menu
-		return menu.NewModel(menu.Props{
-			Width:     p.Width,
-			Height:    p.Height,
-			TxtStyle:  p.TxtStyle,
-			QuitStyle: p.QuitStyle,
-		})
+		return menu.NewModel(menu.Props{Styles: m.props.Styles})
 	}
 }

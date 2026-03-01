@@ -3,7 +3,9 @@ package game
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/notnil/chess"
 
+	"terminalchess/internal/ui/board"
 	"terminalchess/internal/ui/navigate"
 	"terminalchess/internal/ui/styles"
 )
@@ -14,10 +16,14 @@ type Props struct {
 
 type Model struct {
 	styles styles.Styles
+	game   *chess.Game
 }
 
 func NewModel(p Props) Model {
-	return Model{styles: p.Styles}
+	return Model{
+		styles: p.Styles,
+		game:   chess.NewGame(),
+	}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -36,12 +42,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	s := m.styles
-
-	content := lipgloss.JoinVertical(lipgloss.Center,
-		s.Body.Render("Chess game coming soon..."),
-		"",
-		s.Hint.Render("esc  go back"),
-	)
-
-	return s.Panel.Render(content)
+	boardView := board.Render(m.game.Position(), s.Board)
+	hint := s.Hint.Render("esc  go back")
+	return lipgloss.JoinVertical(lipgloss.Center, boardView, "", hint)
 }

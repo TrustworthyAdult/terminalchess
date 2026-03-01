@@ -1,6 +1,10 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+
+	"terminalchess/internal/ui/board"
+)
 
 var (
 	green  = lipgloss.AdaptiveColor{Light: "#4a7c59", Dark: "#769656"}
@@ -10,13 +14,14 @@ var (
 )
 
 type Styles struct {
-	Panel      lipgloss.Style
-	Title      lipgloss.Style
-	Hint       lipgloss.Style
-	Body       lipgloss.Style
-	Cursor     lipgloss.Style
-	NormalItem lipgloss.Style
+	Panel        lipgloss.Style
+	Title        lipgloss.Style
+	Hint         lipgloss.Style
+	Body         lipgloss.Style
+	Cursor       lipgloss.Style
+	NormalItem   lipgloss.Style
 	SelectedItem lipgloss.Style
+	Board        board.Styles
 }
 
 func New(renderer *lipgloss.Renderer) Styles {
@@ -42,5 +47,6 @@ func New(renderer *lipgloss.Renderer) Styles {
 			Foreground(selFg).
 			Bold(true).
 			Padding(0, 1),
+		Board: board.NewStyles(renderer),
 	}
 }

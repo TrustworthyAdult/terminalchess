@@ -11,7 +11,7 @@ func main() {
 	cfg := server.Config{
 		Host:        "localhost",
 		Port:        "23234",
-		HostKeyPath: ".ssh/id_ed25519",
+		HostKeyPath: ".ssh/wish_host_key", //TODO: Use env vars to store ssh key(s)
 	}
 
 	s, err := server.New(cfg)

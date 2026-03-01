@@ -9,15 +9,19 @@ import (
 )
 
 type Styles struct {
-	LightSquare lipgloss.Style
-	DarkSquare  lipgloss.Style
-	Label       lipgloss.Style
+	LightSquare  lipgloss.Style
+	DarkSquare   lipgloss.Style
+	CursorLight  lipgloss.Style
+	CursorDark   lipgloss.Style
+	Label        lipgloss.Style
 }
 
 func NewStyles(renderer *lipgloss.Renderer) Styles {
 	return Styles{
-		LightSquare: renderer.NewStyle().Background(lipgloss.Color("#f0d9b5")),
-		DarkSquare:  renderer.NewStyle().Background(lipgloss.Color("#2c5430")),
+		LightSquare: renderer.NewStyle().Background(lipgloss.Color("#F0D9B5")),
+		DarkSquare:  renderer.NewStyle().Background(lipgloss.Color("#B58863")),
+		CursorLight: renderer.NewStyle().Background(lipgloss.Color("#CCD277")),
+		CursorDark:  renderer.NewStyle().Background(lipgloss.Color("#AAA23A")),
 		Label: renderer.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#9b9b9b", Dark: "#5c5c5c"}),
 	}
@@ -42,7 +46,7 @@ var blackPieces = map[chess.PieceType]string{
 }
 
 // Render draws the board from White's perspective.
-func Render(pos *chess.Position, s Styles) string {
+func Render(pos *chess.Position, s Styles, cursor chess.Square) string {
 	b := pos.Board()
 	var sb strings.Builder
 
@@ -52,7 +56,8 @@ func Render(pos *chess.Position, s Styles) string {
 	for r := chess.Rank8; r >= chess.Rank1; r-- {
 		sb.WriteString(s.Label.Render(fmt.Sprintf("%d ", int(r)+1)))
 		for f := chess.FileA; f <= chess.FileH; f++ {
-			sb.WriteString(renderSquare(f, r, b.Piece(chess.NewSquare(f, r)), s))
+			sq := chess.NewSquare(f, r)
+			sb.WriteString(renderSquare(sq, b.Piece(sq), cursor, s))
 		}
 		sb.WriteString(s.Label.Render(fmt.Sprintf(" %d", int(r)+1)))
 		sb.WriteString("\n")
@@ -71,12 +76,20 @@ func fileLabels(s Styles) string {
 	return sb.String()
 }
 
-func renderSquare(f chess.File, r chess.Rank, piece chess.Piece, s Styles) string {
+func renderSquare(sq chess.Square, piece chess.Piece, cursor chess.Square, s Styles) string {
+	f, r := sq.File(), sq.Rank()
 	isLight := (int(f)+int(r))%2 == 1
 
-	bg := s.DarkSquare
-	if isLight {
+	var bg lipgloss.Style
+	switch {
+	case sq == cursor && isLight:
+		bg = s.CursorLight
+	case sq == cursor:
+		bg = s.CursorDark
+	case isLight:
 		bg = s.LightSquare
+	default:
+		bg = s.DarkSquare
 	}
 
 	if piece == chess.NoPiece {
@@ -90,7 +103,7 @@ func renderSquare(f chess.File, r chess.Rank, piece chess.Piece, s Styles) strin
 
 	if piece.Color() == chess.White {
 		symbol = whitePieces[piece.Type()]
-		fg = "#b8860b"
+		fg = "#FFFFFF"
 	} else {
 		symbol = blackPieces[piece.Type()]
 		fg = "#1a1a1a"

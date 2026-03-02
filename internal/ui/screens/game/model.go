@@ -15,18 +15,20 @@ type Props struct {
 }
 
 type Model struct {
-	styles     styles.Styles
-	game       *chess.Game
-	cursor     chess.Square
-	selected   *chess.Square
-	validDests map[chess.Square]bool
+	styles      styles.Styles
+	game        *chess.Game
+	cursor      chess.Square
+	selected    *chess.Square
+	validDests  map[chess.Square]bool
+	perspective chess.Color
 }
 
 func NewModel(p Props) Model {
 	return Model{
-		styles: p.Styles,
-		game:   chess.NewGame(),
-		cursor: chess.A1,
+		styles:      p.Styles,
+		game:        chess.NewGame(),
+		cursor:      chess.A1,
+		perspective: chess.White,
 	}
 }
 
@@ -44,21 +46,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				return m, navigate.To(navigate.Menu)
 			}
-		case "up", "k":
-			if r := m.cursor.Rank(); r < chess.Rank8 {
-				m.cursor = chess.NewSquare(m.cursor.File(), r+1)
+		case "r":
+			if m.perspective == chess.White {
+				m.perspective = chess.Black
+			} else {
+				m.perspective = chess.White
 			}
-		case "down", "j":
-			if r := m.cursor.Rank(); r > chess.Rank1 {
+		case "up", "k":
+			r := m.cursor.Rank()
+			if m.perspective == chess.White && r < chess.Rank8 {
+				m.cursor = chess.NewSquare(m.cursor.File(), r+1)
+			} else if m.perspective == chess.Black && r > chess.Rank1 {
 				m.cursor = chess.NewSquare(m.cursor.File(), r-1)
 			}
+		case "down", "j":
+			r := m.cursor.Rank()
+			if m.perspective == chess.White && r > chess.Rank1 {
+				m.cursor = chess.NewSquare(m.cursor.File(), r-1)
+			} else if m.perspective == chess.Black && r < chess.Rank8 {
+				m.cursor = chess.NewSquare(m.cursor.File(), r+1)
+			}
 		case "left", "h":
-			if f := m.cursor.File(); f > chess.FileA {
+			f := m.cursor.File()
+			if m.perspective == chess.White && f > chess.FileA {
 				m.cursor = chess.NewSquare(f-1, m.cursor.Rank())
+			} else if m.perspective == chess.Black && f < chess.FileH {
+				m.cursor = chess.NewSquare(f+1, m.cursor.Rank())
 			}
 		case "right", "l":
-			if f := m.cursor.File(); f < chess.FileH {
+			f := m.cursor.File()
+			if m.perspective == chess.White && f < chess.FileH {
 				m.cursor = chess.NewSquare(f+1, m.cursor.Rank())
+			} else if m.perspective == chess.Black && f > chess.FileA {
+				m.cursor = chess.NewSquare(f-1, m.cursor.Rank())
 			}
 		case "enter", " ":
 			if m.selected == nil {
@@ -67,6 +87,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				executeMove(m.game, *m.selected, m.cursor)
 				m.selected = nil
 				m.validDests = nil
+				m.perspective = m.game.Position().Turn()
 			} else {
 				// Try to reselect another own piece; deselects if cursor is elsewhere.
 				m.selected, m.validDests = trySelect(m.game, m.cursor)
@@ -82,10 +103,11 @@ func (m Model) View() string {
 		Cursor:     m.cursor,
 		Selected:   m.selected,
 		ValidDests: m.validDests,
+		FlipBoard:  m.perspective == chess.Black,
 	}
 	boardView := board.Render(m.game.Position(), s.Board, opts)
 	turnIndicator := turnIndicator(m.game, s)
-	hint := s.Hint.Render("arrows/hjkl  move    enter/space  select·move    esc  back")
+	hint := s.Hint.Render("arrows/hjkl  move    enter/space  select·move    r  flip    esc  back")
 	return lipgloss.JoinVertical(lipgloss.Center, boardView, "", turnIndicator, "", hint)
 }
 

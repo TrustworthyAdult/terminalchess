@@ -9,12 +9,12 @@ import (
 )
 
 type Styles struct {
-	LightSquare   lipgloss.Style
-	DarkSquare    lipgloss.Style
-	CursorLight   lipgloss.Style
-	CursorDark    lipgloss.Style
-	SelectedLight lipgloss.Style
-	SelectedDark  lipgloss.Style
+	LightSquare    lipgloss.Style
+	DarkSquare     lipgloss.Style
+	CursorLight    lipgloss.Style
+	CursorDark     lipgloss.Style
+	SelectedLight  lipgloss.Style
+	SelectedDark   lipgloss.Style
 	Label          lipgloss.Style
 	LabelHighlight lipgloss.Style
 }
@@ -50,22 +50,25 @@ type RenderOptions struct {
 	Cursor     chess.Square
 	Selected   *chess.Square
 	ValidDests map[chess.Square]bool
+	FlipBoard  bool
 }
 
-// Render draws the board from White's perspective.
+// Render draws the board. When FlipBoard is false the view is from White's
+// side (rank 1 at the bottom); when true it is from Black's side.
 func Render(pos *chess.Position, s Styles, opts RenderOptions) string {
 	b := pos.Board()
 	cursorFile := opts.Cursor.File()
 	cursorRank := opts.Cursor.Rank()
-	var sb strings.Builder
+	rankOrder, fileOrder := boardOrder(opts.FlipBoard)
 
-	sb.WriteString(fileLabels(s, cursorFile))
+	var sb strings.Builder
+	sb.WriteString(fileLabels(s, cursorFile, fileOrder))
 	sb.WriteString("\n")
 
-	for r := chess.Rank8; r >= chess.Rank1; r-- {
+	for _, r := range rankOrder {
 		rankLabel := s.labelStyle(r == cursorRank)
 		sb.WriteString(rankLabel.Render(fmt.Sprintf("%d ", int(r)+1)))
-		for f := chess.FileA; f <= chess.FileH; f++ {
+		for _, f := range fileOrder {
 			sq := chess.NewSquare(f, r)
 			sb.WriteString(renderSquare(sq, b.Piece(sq), opts, s))
 		}
@@ -73,8 +76,26 @@ func Render(pos *chess.Position, s Styles, opts RenderOptions) string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(fileLabels(s, cursorFile))
+	sb.WriteString(fileLabels(s, cursorFile, fileOrder))
 	return sb.String()
+}
+
+// boardOrder returns the rank and file iteration order for the given perspective.
+// White: ranks 8→1 top-to-bottom, files A→H left-to-right.
+// Black: ranks 1→8 top-to-bottom, files H→A left-to-right.
+func boardOrder(flip bool) ([]chess.Rank, []chess.File) {
+	ranks := make([]chess.Rank, 8)
+	files := make([]chess.File, 8)
+	for i := 0; i < 8; i++ {
+		if flip {
+			ranks[i] = chess.Rank(i)
+			files[i] = chess.File(7 - i)
+		} else {
+			ranks[i] = chess.Rank(7 - i)
+			files[i] = chess.File(i)
+		}
+	}
+	return ranks, files
 }
 
 func (s Styles) labelStyle(highlighted bool) lipgloss.Style {
@@ -84,10 +105,10 @@ func (s Styles) labelStyle(highlighted bool) lipgloss.Style {
 	return s.Label
 }
 
-func fileLabels(s Styles, cursorFile chess.File) string {
+func fileLabels(s Styles, cursorFile chess.File, fileOrder []chess.File) string {
 	var sb strings.Builder
 	sb.WriteString("  ") // align with rank label width
-	for f := chess.FileA; f <= chess.FileH; f++ {
+	for _, f := range fileOrder {
 		sb.WriteString(s.labelStyle(f == cursorFile).Render(fmt.Sprintf(" %c ", rune('a')+rune(f))))
 	}
 	return sb.String()

@@ -37,16 +37,7 @@ func NewStyles(renderer *lipgloss.Renderer) Styles {
 	}
 }
 
-var whitePieces = map[chess.PieceType]string{
-	chess.King:   "♔",
-	chess.Queen:  "♕",
-	chess.Rook:   "♖",
-	chess.Bishop: "♗",
-	chess.Knight: "♘",
-	chess.Pawn:   "♙",
-}
-
-var blackPieces = map[chess.PieceType]string{
+var pieces = map[chess.PieceType]string{
 	chess.King:   "♚",
 	chess.Queen:  "♛",
 	chess.Rook:   "♜",
@@ -137,18 +128,10 @@ func renderSquare(sq chess.Square, piece chess.Piece, opts RenderOptions, s Styl
 		return bg.Render("   ")
 	}
 
-	var (
-		symbol string
-		fg     lipgloss.Color
-	)
-
+	fg := lipgloss.Color("#1a1a1a")
 	if piece.Color() == chess.White {
-		symbol = whitePieces[piece.Type()]
 		fg = "#FFFFFF"
-	} else {
-		symbol = blackPieces[piece.Type()]
-		fg = "#1a1a1a"
 	}
 
-	return bg.Foreground(fg).Bold(true).Render(" " + symbol + " ")
+	return bg.Foreground(fg).Bold(true).Render(" " + pieces[piece.Type()] + " ")
 }

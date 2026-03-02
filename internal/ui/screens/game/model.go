@@ -84,8 +84,17 @@ func (m Model) View() string {
 		ValidDests: m.validDests,
 	}
 	boardView := board.Render(m.game.Position(), s.Board, opts)
+	turnIndicator := turnIndicator(m.game, s)
 	hint := s.Hint.Render("arrows/hjkl  move    enter/space  select·move    esc  back")
-	return lipgloss.JoinVertical(lipgloss.Center, boardView, "", hint)
+	return lipgloss.JoinVertical(lipgloss.Center, boardView, "", turnIndicator, "", hint)
+}
+
+func turnIndicator(g *chess.Game, s styles.Styles) string {
+	base := s.Body.Background(lipgloss.Color("#6b6b6b")).Padding(0, 1)
+	if g.Position().Turn() == chess.White {
+		return base.Foreground(lipgloss.Color("#FFFFFF")).Render("♚  White to move")
+	}
+	return base.Foreground(lipgloss.Color("#1a1a1a")).Render("♚  Black to move")
 }
 
 // trySelect returns a selection and valid destinations if sq holds a piece

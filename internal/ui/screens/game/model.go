@@ -9,11 +9,20 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	ansi "github.com/charmbracelet/x/ansi"
 	"github.com/notnil/chess"
 
 	"terminalchess/internal/ui/board"
 	"terminalchess/internal/ui/navigate"
 	"terminalchess/internal/ui/styles"
+)
+
+type gamePhase int
+
+const (
+	playing  gamePhase = iota
+	postGame           // popup visible
+	studying           // popup dismissed, board read-only
 )
 
 type panelFocus int
@@ -78,6 +87,8 @@ type Model struct {
 	focus       panelFocus
 	moveHistory viewport.Model
 	termWidth   int
+	phase       gamePhase
+	popupChoice int
 }
 
 func NewModel(p Props) Model {
@@ -115,9 +126,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if k, ok := msg.(tea.KeyMsg); ok {
-		switch {
-		case key.Matches(k, keys.Quit):
+		// Quit always works regardless of phase.
+		if key.Matches(k, keys.Quit) {
 			return m, tea.Quit
+		}
+
+		if m.phase == postGame {
+			switch {
+			case key.Matches(k, keys.Up):
+				m.popupChoice = (m.popupChoice + 2) % 3
+			case key.Matches(k, keys.Down):
+				m.popupChoice = (m.popupChoice + 1) % 3
+			case key.Matches(k, keys.Select):
+				switch m.popupChoice {
+				case 0: // Exit
+					return m, navigate.To(navigate.Menu)
+				case 1: // Rematch
+					m.game = chess.NewGame()
+					m.cursor = chess.A1
+					m.selected = nil
+					m.validDests = nil
+					m.perspective = chess.White
+					m.moveHistory = newMoveHistoryViewport(m.styles)
+					m.phase = playing
+					m.popupChoice = 0
+				case 2: // Study
+					m.phase = studying
+				}
+			case key.Matches(k, keys.Back):
+				m.phase = studying
+			}
+			// All other keys consumed in postGame.
+			return m, nil
+		}
+
+		// playing or studying
+		switch {
 		case key.Matches(k, keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(k, keys.Tab):
@@ -169,7 +213,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.perspective == chess.Black && f > chess.FileA {
 				m.cursor = chess.NewSquare(f-1, m.cursor.Rank())
 			}
-		case m.focus == boardFocus && key.Matches(k, keys.Select):
+		case m.focus == boardFocus && m.phase == playing && key.Matches(k, keys.Select):
 			if m.selected == nil {
 				m.selected, m.validDests = trySelect(m.game, m.cursor)
 			} else if m.validDests[m.cursor] {
@@ -179,6 +223,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.perspective = m.game.Position().Turn()
 				m.moveHistory.SetContent(strings.Join(moveHistoryLines(m.game), "\n"))
 				m.moveHistory.GotoBottom()
+				if m.game.Outcome() != chess.NoOutcome {
+					m.phase = postGame
+				}
 			} else {
 				// Try to reselect another own piece; deselects if cursor is elsewhere.
 				m.selected, m.validDests = trySelect(m.game, m.cursor)
@@ -186,6 +233,101 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func outcomeText(g *chess.Game) string {
+	outcome := g.Outcome()
+	method := g.Method()
+	if method == chess.Checkmate {
+		if outcome == chess.WhiteWon {
+			return "Checkmate — White wins"
+		}
+		return "Checkmate — Black wins"
+	}
+	switch method {
+	case chess.Stalemate:
+		return "Draw — Stalemate"
+	case chess.ThreefoldRepetition:
+		return "Draw — Threefold Repetition"
+	case chess.FiftyMoveRule:
+		return "Draw — 50-Move Rule"
+	case chess.InsufficientMaterial:
+		return "Draw — Insufficient Material"
+	default:
+		return "Draw"
+	}
+}
+
+func renderPopup(g *chess.Game, choice int) string {
+	labels := []string{"Exit", "Rematch", "Study"}
+	titleW := lipgloss.Width(outcomeText(g))
+	selectedStyle := lipgloss.NewStyle().Bold(true).
+		Foreground(lipgloss.Color("#000000")).
+		Background(lipgloss.Color("#ffffff")).
+		Width(titleW)
+	unselectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#777777")).
+		Background(lipgloss.Color("#161616")).
+		Width(titleW)
+
+	var sb strings.Builder
+	for i, label := range labels {
+		if i == choice {
+			sb.WriteString(selectedStyle.Render("▸ " + label))
+		} else {
+			sb.WriteString(unselectedStyle.Render("  " + label))
+		}
+		if i < len(labels)-1 {
+			sb.WriteString("\n")
+		}
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff")).Render(outcomeText(g)),
+		"",
+		sb.String(),
+	)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#ffffff")).
+		Padding(1, 3).
+		Background(lipgloss.Color("#161616")).
+		Render(content)
+}
+
+func overlayCenter(bg, fg string) string {
+	bgLines := strings.Split(bg, "\n")
+	fgLines := strings.Split(fg, "\n")
+
+	bgW := lipgloss.Width(bg)
+	fgW := lipgloss.Width(fg)
+	startY := (len(bgLines) - len(fgLines)) / 2
+	startX := (bgW - fgW) / 2
+	if startX < 0 {
+		startX = 0
+	}
+	if startY < 0 {
+		startY = 0
+	}
+
+	for i, fgLine := range fgLines {
+		idx := startY + i
+		if idx >= len(bgLines) {
+			continue
+		}
+		bgLine := bgLines[idx]
+		lineW := lipgloss.Width(bgLine)
+		fgLineW := lipgloss.Width(fgLine)
+
+		left := ansi.Truncate(bgLine, startX, "")
+		if w := lipgloss.Width(left); w < startX {
+			left += strings.Repeat(" ", startX-w)
+		}
+		right := ansi.Cut(bgLine, startX+fgLineW, lineW)
+		bgLines[idx] = left + fgLine + right
+	}
+	return strings.Join(bgLines, "\n")
 }
 
 func panelBorderStyle(focused bool) lipgloss.Style {
@@ -250,7 +392,11 @@ func (m Model) View() string {
 
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, chatPanel, boardPanel, moveHistoryPanel)
 	helpView := lipgloss.NewStyle().Height(2).Render(m.help.View(keys))
-	return lipgloss.JoinVertical(lipgloss.Left, panels, helpView)
+	screen := lipgloss.JoinVertical(lipgloss.Left, panels, helpView)
+	if m.phase == postGame {
+		return overlayCenter(screen, renderPopup(m.game, m.popupChoice))
+	}
+	return screen
 }
 
 func moveHistoryLines(g *chess.Game) []string {

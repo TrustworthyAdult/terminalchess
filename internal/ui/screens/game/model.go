@@ -1,6 +1,8 @@
 package game
 
 import (
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/notnil/chess"
@@ -9,6 +11,41 @@ import (
 	"terminalchess/internal/ui/navigate"
 	"terminalchess/internal/ui/styles"
 )
+
+type keyMap struct {
+	Up     key.Binding
+	Down   key.Binding
+	Left   key.Binding
+	Right  key.Binding
+	Select key.Binding
+	Flip   key.Binding
+	Back   key.Binding
+	Quit   key.Binding
+	Help   key.Binding
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Select, k.Flip, k.Back, k.Help}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Left, k.Right},
+		{k.Select, k.Flip, k.Back, k.Quit},
+	}
+}
+
+var keys = keyMap{
+	Up:     key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	Down:   key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+	Left:   key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "left")),
+	Right:  key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "right")),
+	Select: key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", "select/move")),
+	Flip:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "flip board")),
+	Back:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+	Quit:   key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
+	Help:   key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "more")),
+}
 
 type Props struct {
 	Styles styles.Styles
@@ -21,6 +58,7 @@ type Model struct {
 	selected    *chess.Square
 	validDests  map[chess.Square]bool
 	perspective chess.Color
+	help        help.Model
 }
 
 func NewModel(p Props) Model {
@@ -29,58 +67,61 @@ func NewModel(p Props) Model {
 		game:        chess.NewGame(),
 		cursor:      chess.A1,
 		perspective: chess.White,
+		help:        help.New(),
 	}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.String() {
-		case "ctrl+c":
+	if k, ok := msg.(tea.KeyMsg); ok {
+		switch {
+		case key.Matches(k, keys.Quit):
 			return m, tea.Quit
-		case "esc":
+		case key.Matches(k, keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
+		case key.Matches(k, keys.Back):
 			if m.selected != nil {
 				m.selected = nil
 				m.validDests = nil
 			} else {
 				return m, navigate.To(navigate.Menu)
 			}
-		case "r":
+		case key.Matches(k, keys.Flip):
 			if m.perspective == chess.White {
 				m.perspective = chess.Black
 			} else {
 				m.perspective = chess.White
 			}
-		case "up", "k":
+		case key.Matches(k, keys.Up):
 			r := m.cursor.Rank()
 			if m.perspective == chess.White && r < chess.Rank8 {
 				m.cursor = chess.NewSquare(m.cursor.File(), r+1)
 			} else if m.perspective == chess.Black && r > chess.Rank1 {
 				m.cursor = chess.NewSquare(m.cursor.File(), r-1)
 			}
-		case "down", "j":
+		case key.Matches(k, keys.Down):
 			r := m.cursor.Rank()
 			if m.perspective == chess.White && r > chess.Rank1 {
 				m.cursor = chess.NewSquare(m.cursor.File(), r-1)
 			} else if m.perspective == chess.Black && r < chess.Rank8 {
 				m.cursor = chess.NewSquare(m.cursor.File(), r+1)
 			}
-		case "left", "h":
+		case key.Matches(k, keys.Left):
 			f := m.cursor.File()
 			if m.perspective == chess.White && f > chess.FileA {
 				m.cursor = chess.NewSquare(f-1, m.cursor.Rank())
 			} else if m.perspective == chess.Black && f < chess.FileH {
 				m.cursor = chess.NewSquare(f+1, m.cursor.Rank())
 			}
-		case "right", "l":
+		case key.Matches(k, keys.Right):
 			f := m.cursor.File()
 			if m.perspective == chess.White && f < chess.FileH {
 				m.cursor = chess.NewSquare(f+1, m.cursor.Rank())
 			} else if m.perspective == chess.Black && f > chess.FileA {
 				m.cursor = chess.NewSquare(f-1, m.cursor.Rank())
 			}
-		case "enter", " ":
+		case key.Matches(k, keys.Select):
 			if m.selected == nil {
 				m.selected, m.validDests = trySelect(m.game, m.cursor)
 			} else if m.validDests[m.cursor] {
@@ -107,8 +148,8 @@ func (m Model) View() string {
 	}
 	boardView := board.Render(m.game.Position(), s.Board, opts)
 	turnIndicator := turnIndicator(m.game, s)
-	hint := s.Hint.Render("arrows/hjkl  move    enter/space  select·move    r  flip    esc  back")
-	return lipgloss.JoinVertical(lipgloss.Center, boardView, "", turnIndicator, "", hint)
+	helpView := lipgloss.NewStyle().Height(2).Render(m.help.View(keys))
+	return lipgloss.JoinVertical(lipgloss.Center, boardView, "", turnIndicator, "", helpView)
 }
 
 func turnIndicator(g *chess.Game, s styles.Styles) string {

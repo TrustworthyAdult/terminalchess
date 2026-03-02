@@ -3,6 +3,7 @@ package menu
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,11 +23,19 @@ type keyMap struct {
 	Quit  key.Binding
 }
 
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Enter, k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Up, k.Down, k.Enter, k.Quit}}
+}
+
 var keys = keyMap{
-	Up:    key.NewBinding(key.WithKeys("up", "k")),
-	Down:  key.NewBinding(key.WithKeys("down", "j")),
-	Enter: key.NewBinding(key.WithKeys("enter")),
-	Quit:  key.NewBinding(key.WithKeys("ctrl+c", "q")),
+	Up:    key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	Down:  key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+	Enter: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+	Quit:  key.NewBinding(key.WithKeys("ctrl+c", "q"), key.WithHelp("q", "quit")),
 }
 
 type menuItem struct {
@@ -43,6 +52,7 @@ type Model struct {
 	items  []menuItem
 	cursor int
 	styles styles.Styles
+	help   help.Model
 }
 
 func NewModel(p Props) Model {
@@ -52,6 +62,7 @@ func NewModel(p Props) Model {
 			{title: "Quit", quit: true},
 		},
 		styles: p.Styles,
+		help:   help.New(),
 	}
 }
 
@@ -97,14 +108,12 @@ func (m Model) View() string {
 		rows = append(rows, line)
 	}
 
-	hint := s.Hint.Render("↑/↓ move   enter select")
-
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		title,
 		"",
 		strings.Join(rows, "\n"),
 		"",
-		hint,
+		m.help.View(keys),
 	)
 
 	return s.Panel.Render(body)

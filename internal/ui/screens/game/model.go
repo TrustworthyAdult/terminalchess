@@ -146,10 +146,17 @@ func (m Model) View() string {
 		ValidDests: m.validDests,
 		FlipBoard:  m.perspective == chess.Black,
 	}
+	isCheckmate := m.game.Outcome() != chess.NoOutcome && m.game.Method() == chess.Checkmate
+
+	status := lipgloss.NewStyle().Height(1).Render(statusIndicator(m.game, s))
 	boardView := board.Render(m.game.Position(), s.Board, opts)
-	turnIndicator := turnIndicator(m.game, s)
+	ti := ""
+	if !isCheckmate {
+		ti = turnIndicator(m.game, s)
+	}
+	turnView := lipgloss.NewStyle().Height(1).Render(ti)
 	helpView := lipgloss.NewStyle().Height(2).Render(m.help.View(keys))
-	return lipgloss.JoinVertical(lipgloss.Center, boardView, "", turnIndicator, "", helpView)
+	return lipgloss.JoinVertical(lipgloss.Center, status, boardView, "", turnView, "", helpView)
 }
 
 func turnIndicator(g *chess.Game, s styles.Styles) string {
@@ -158,6 +165,37 @@ func turnIndicator(g *chess.Game, s styles.Styles) string {
 		return base.Foreground(lipgloss.Color("#FFFFFF")).Render("♚  White to move")
 	}
 	return base.Foreground(lipgloss.Color("#1a1a1a")).Render("♚  Black to move")
+}
+
+func statusIndicator(g *chess.Game, s styles.Styles) string {
+	if g.Outcome() != chess.NoOutcome && g.Method() == chess.Checkmate {
+		winner := "White"
+		if g.Outcome() == chess.BlackWon {
+			winner = "Black"
+		}
+		style := s.Body.
+			Background(lipgloss.Color("#3B0000")).
+			Foreground(lipgloss.Color("#C8A0A0")).
+			Padding(0, 1).
+			Bold(true)
+		return style.Render("♚  Checkmate — " + winner + " wins")
+	}
+
+	moves := g.Moves()
+	if len(moves) > 0 && moves[len(moves)-1].HasTag(chess.Check) {
+		side := "White"
+		if g.Position().Turn() == chess.Black {
+			side = "Black"
+		}
+		style := s.Body.
+			Background(lipgloss.Color("#CC4400")).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Padding(0, 1).
+			Bold(true)
+		return style.Render("♚  " + side + " is in check!")
+	}
+
+	return ""
 }
 
 // trySelect returns a selection and valid destinations if sq holds a piece

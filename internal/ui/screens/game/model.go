@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	ansi "github.com/charmbracelet/x/ansi"
 	"github.com/notnil/chess"
+	"github.com/notnil/chess/uci"
 
 	"terminalchess/internal/ui/board"
 	"terminalchess/internal/ui/navigate"
@@ -72,34 +74,76 @@ var keys = keyMap{
 	Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "more")),
 }
 
+// Config holds engine-specific settings passed through navigate.Msg.Config.
+type Config struct {
+	ComputerColor *chess.Color
+	SkillLevel    int
+}
+
 type Props struct {
-	Styles styles.Styles
+	Styles        styles.Styles
+	ComputerColor *chess.Color // nil = human vs human
+	SkillLevel    int          // 0–20 Stockfish Skill Level
+}
+
+// Engine message types.
+type engineReadyMsg struct {
+	eng *uci.Engine
+	err error
+}
+
+type engineMoveMsg struct {
+	move *chess.Move
+	err  error
 }
 
 type Model struct {
-	styles      styles.Styles
-	game        *chess.Game
-	cursor      chess.Square
-	selected    *chess.Square
-	validDests  map[chess.Square]bool
-	perspective chess.Color
-	help        help.Model
-	focus       panelFocus
-	moveHistory viewport.Model
-	termWidth   int
-	phase       gamePhase
-	popupChoice int
+	styles        styles.Styles
+	game          *chess.Game
+	cursor        chess.Square
+	selected      *chess.Square
+	validDests    map[chess.Square]bool
+	// viewColor is whose session this is:
+	//   local play  — swaps to the active side after every move
+	//   vs computer — fixed at the human's color
+	//   online play — fixed at the remote player's color (future)
+	viewColor     chess.Color
+	perspective   chess.Color // board flip direction; follows viewColor, overridable with 'r'
+	help          help.Model
+	focus         panelFocus
+	moveHistory   viewport.Model
+	termWidth     int
+	phase         gamePhase
+	popupChoice   int
+	computerColor *chess.Color
+	skillLevel    int
+	engine        *uci.Engine
+	thinking      bool
 }
 
 func NewModel(p Props) Model {
+	vc := humanPerspective(p.ComputerColor)
 	return Model{
-		styles:      p.Styles,
-		game:        chess.NewGame(),
-		cursor:      chess.A1,
-		perspective: chess.White,
-		help:        help.New(),
-		moveHistory: newMoveHistoryViewport(p.Styles),
+		styles:        p.Styles,
+		game:          chess.NewGame(),
+		cursor:        chess.A1,
+		viewColor:     vc,
+		perspective:   vc,
+		help:          help.New(),
+		moveHistory:   newMoveHistoryViewport(p.Styles),
+		computerColor: p.ComputerColor,
+		skillLevel:    p.SkillLevel,
 	}
+}
+
+// humanPerspective returns the color for the human player.
+// In vs-computer mode the human is on the opposite side from the engine.
+// In local play (no computer) it defaults to White.
+func humanPerspective(computerColor *chess.Color) chess.Color {
+	if computerColor != nil && *computerColor == chess.White {
+		return chess.Black
+	}
+	return chess.White
 }
 
 // newMoveHistoryViewport creates a viewport sized to match the board panel
@@ -118,16 +162,113 @@ func newMoveHistoryViewport(s styles.Styles) viewport.Model {
 	return viewport.New(20, innerH-1) // -1 for title row
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.computerColor != nil {
+		return initEngineCmd(m.skillLevel)
+	}
+	return nil
+}
+
+// TODO: replace baremetal dependency on a system-installed stockfish binary.
+// Consider bundling a WASM engine or using a pure-Go chess engine so the
+// server has no external runtime requirements.
+func initEngineCmd(skillLevel int) tea.Cmd {
+	return func() tea.Msg {
+		eng, err := uci.New("stockfish")
+		if err != nil {
+			return engineReadyMsg{err: err}
+		}
+		_ = eng.Run(uci.CmdUCI, uci.CmdIsReady, uci.CmdUCINewGame)
+		_ = eng.Run(uci.CmdSetOption{Name: "Skill Level", Value: fmt.Sprintf("%d", skillLevel)})
+		return engineReadyMsg{eng: eng}
+	}
+}
+
+func engineMoveCmd(eng *uci.Engine, pos *chess.Position, skillLevel int) tea.Cmd {
+	return func() tea.Msg {
+		moveTime := skillToMoveTime(skillLevel)
+		err := eng.Run(
+			uci.CmdPosition{Position: pos},
+			uci.CmdGo{MoveTime: moveTime},
+		)
+		if err != nil {
+			return engineMoveMsg{err: err}
+		}
+		return engineMoveMsg{move: eng.SearchResults().BestMove}
+	}
+}
+
+func skillToMoveTime(skill int) time.Duration {
+	switch {
+	case skill <= 7:
+		return 200 * time.Millisecond
+	case skill <= 14:
+		return 800 * time.Millisecond
+	default:
+		return 2000 * time.Millisecond
+	}
+}
+
+func (m *Model) isComputerTurn() bool {
+	return m.computerColor != nil && m.engine != nil &&
+		*m.computerColor == m.game.Position().Turn()
+}
+
+func (m *Model) closeEngine() {
+	if m.engine != nil {
+		m.engine.Close()
+		m.engine = nil
+	}
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 		m.termWidth = wsm.Width
 	}
 
+	// Handle engine messages before key handling.
+	switch msg := msg.(type) {
+	case engineReadyMsg:
+		if msg.err != nil {
+			// Stockfish unavailable; fall back to human vs human.
+			m.computerColor = nil
+			return m, nil
+		}
+		m.engine = msg.eng
+		if m.isComputerTurn() {
+			m.thinking = true
+			return m, engineMoveCmd(m.engine, m.game.Position(), m.skillLevel)
+		}
+		return m, nil
+
+	case engineMoveMsg:
+		m.thinking = false
+		if msg.err != nil || msg.move == nil {
+			return m, nil
+		}
+		// Match the UCI move against valid moves and play it.
+		for _, move := range m.game.ValidMoves() {
+			if move.S1() == msg.move.S1() && move.S2() == msg.move.S2() {
+				if msg.move.Promo() == chess.NoPieceType || move.Promo() == msg.move.Promo() {
+					m.game.Move(move)
+					break
+				}
+			}
+		}
+		m.selected = nil
+		m.validDests = nil
+		m.moveHistory.SetContent(strings.Join(moveHistoryLines(m.game), "\n"))
+		m.moveHistory.GotoBottom()
+		if m.game.Outcome() != chess.NoOutcome {
+			m.phase = postGame
+		}
+		return m, nil
+	}
+
 	if k, ok := msg.(tea.KeyMsg); ok {
 		// Quit always works regardless of phase.
 		if key.Matches(k, keys.Quit) {
+			m.closeEngine()
 			return m, tea.Quit
 		}
 
@@ -140,16 +281,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(k, keys.Select):
 				switch m.popupChoice {
 				case 0: // Exit
+					m.closeEngine()
 					return m, navigate.To(navigate.Menu)
 				case 1: // Rematch
+					if m.engine != nil {
+						m.engine.Run(uci.CmdUCINewGame)
+					}
 					m.game = chess.NewGame()
 					m.cursor = chess.A1
 					m.selected = nil
 					m.validDests = nil
-					m.perspective = chess.White
+					m.viewColor = humanPerspective(m.computerColor)
+					m.perspective = m.viewColor
 					m.moveHistory = newMoveHistoryViewport(m.styles)
 					m.phase = playing
 					m.popupChoice = 0
+					if m.isComputerTurn() {
+						m.thinking = true
+						return m, engineMoveCmd(m.engine, m.game.Position(), m.skillLevel)
+					}
 				case 2: // Study
 					m.phase = studying
 				}
@@ -157,6 +307,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.phase = studying
 			}
 			// All other keys consumed in postGame.
+			return m, nil
+		}
+
+		// Block input while engine is thinking.
+		if m.thinking {
 			return m, nil
 		}
 
@@ -173,6 +328,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = nil
 				m.validDests = nil
 			} else {
+				m.closeEngine()
 				return m, navigate.To(navigate.Menu)
 			}
 		case m.focus == moveListFocus && key.Matches(k, keys.Up):
@@ -220,11 +376,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				executeMove(m.game, *m.selected, m.cursor)
 				m.selected = nil
 				m.validDests = nil
-				m.perspective = m.game.Position().Turn()
+				if m.computerColor == nil {
+					m.viewColor = m.game.Position().Turn()
+					m.perspective = m.viewColor
+				}
 				m.moveHistory.SetContent(strings.Join(moveHistoryLines(m.game), "\n"))
 				m.moveHistory.GotoBottom()
 				if m.game.Outcome() != chess.NoOutcome {
 					m.phase = postGame
+				} else if m.isComputerTurn() {
+					m.thinking = true
+					return m, engineMoveCmd(m.engine, m.game.Position(), m.skillLevel)
 				}
 			} else {
 				// Try to reselect another own piece; deselects if cursor is elsewhere.
@@ -349,7 +511,16 @@ func (m Model) View() string {
 		ValidDests: m.validDests,
 		FlipBoard:  m.perspective == chess.Black,
 	}
-	indicator := lipgloss.NewStyle().Height(1).Render(gameIndicator(m.game, s))
+	if history := m.game.MoveHistory(); len(history) > 0 {
+		last := history[len(history)-1]
+		// Only highlight the opponent's move, not our own.
+		if last.PrePosition.Turn() != m.viewColor {
+			from, to := last.Move.S1(), last.Move.S2()
+			opts.LastMoveFrom = &from
+			opts.LastMoveTo = &to
+		}
+	}
+	indicator := lipgloss.NewStyle().Height(1).Render(gameIndicator(m.game, s, m.thinking))
 	boardView := board.Render(m.game.Position(), s.Board, opts)
 
 	boardContent := lipgloss.JoinVertical(lipgloss.Center, boardView, indicator)
@@ -414,8 +585,15 @@ func moveHistoryLines(g *chess.Game) []string {
 	return lines
 }
 
-func gameIndicator(g *chess.Game, s styles.Styles) string {
+func gameIndicator(g *chess.Game, s styles.Styles, thinking bool) string {
 	base := s.Body.Padding(0, 1)
+
+	if thinking {
+		return base.
+			Background(lipgloss.Color("#6b6b6b")).
+			Foreground(lipgloss.Color("#AAAAAA")).
+			Render("⏳  Thinking…")
+	}
 
 	if g.Outcome() != chess.NoOutcome && g.Method() == chess.Checkmate {
 		winner := "White"

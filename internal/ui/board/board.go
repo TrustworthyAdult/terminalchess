@@ -15,6 +15,8 @@ type Styles struct {
 	CursorDark     lipgloss.Style
 	SelectedLight  lipgloss.Style
 	SelectedDark   lipgloss.Style
+	LastMoveLight  lipgloss.Style
+	LastMoveDark   lipgloss.Style
 	Label          lipgloss.Style
 	LabelHighlight lipgloss.Style
 }
@@ -29,6 +31,8 @@ func NewStyles(renderer *lipgloss.Renderer) Styles {
 		CursorDark:    renderer.NewStyle().Background(cursorDark),
 		SelectedLight: renderer.NewStyle().Background(lipgloss.Color("#C8A800")),
 		SelectedDark:  renderer.NewStyle().Background(lipgloss.Color("#D4AC00")),
+		LastMoveLight: renderer.NewStyle().Background(lipgloss.Color("#CDD26A")),
+		LastMoveDark:  renderer.NewStyle().Background(lipgloss.Color("#AABA72")),
 		Label: renderer.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#9b9b9b", Dark: "#5c5c5c"}),
 		LabelHighlight: renderer.NewStyle().
@@ -47,10 +51,12 @@ var pieces = map[chess.PieceType]string{
 }
 
 type RenderOptions struct {
-	Cursor     chess.Square
-	Selected   *chess.Square
-	ValidDests map[chess.Square]bool
-	FlipBoard  bool
+	Cursor        chess.Square
+	Selected      *chess.Square
+	ValidDests    map[chess.Square]bool
+	FlipBoard     bool
+	LastMoveFrom  *chess.Square
+	LastMoveTo    *chess.Square
 }
 
 // Render draws the board. When FlipBoard is false the view is from White's
@@ -120,6 +126,8 @@ func renderSquare(sq chess.Square, piece chess.Piece, opts RenderOptions, s Styl
 	isCursor := sq == opts.Cursor
 	isSelected := opts.Selected != nil && sq == *opts.Selected
 	isValidDest := opts.ValidDests[sq]
+	isLastMove := (opts.LastMoveFrom != nil && sq == *opts.LastMoveFrom) ||
+		(opts.LastMoveTo != nil && sq == *opts.LastMoveTo)
 
 	var bg lipgloss.Style
 	switch {
@@ -139,6 +147,10 @@ func renderSquare(sq chess.Square, piece chess.Piece, opts RenderOptions, s Styl
 		bg = s.CursorLight
 	case isValidDest:
 		bg = s.CursorDark
+	case isLastMove && isLight:
+		bg = s.LastMoveLight
+	case isLastMove:
+		bg = s.LastMoveDark
 	case isLight:
 		bg = s.LightSquare
 	default:

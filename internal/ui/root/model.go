@@ -7,6 +7,7 @@ import (
 	"terminalchess/internal/ui/navigate"
 	"terminalchess/internal/ui/screens/game"
 	"terminalchess/internal/ui/screens/menu"
+	"terminalchess/internal/ui/screens/setup"
 	"terminalchess/internal/ui/styles"
 )
 
@@ -23,7 +24,7 @@ type Model struct {
 
 func New(p Props) Model {
 	m := Model{props: p}
-	m.current = m.makeScreen(navigate.Menu)
+	m.current = m.makeScreen(navigate.Msg{To: navigate.Menu})
 	return m
 }
 
@@ -31,7 +32,7 @@ func (m Model) Init() tea.Cmd { return m.current.Init() }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if nav, ok := msg.(navigate.Msg); ok {
-		m.current = m.makeScreen(nav.To)
+		m.current = m.makeScreen(nav)
 		return m, m.current.Init()
 	}
 
@@ -55,10 +56,17 @@ func (m Model) View() string {
 	)
 }
 
-func (m Model) makeScreen(s navigate.Screen) tea.Model {
-	switch s {
+func (m Model) makeScreen(nav navigate.Msg) tea.Model {
+	switch nav.To {
+	case navigate.Setup:
+		return setup.NewModel(setup.Props{Styles: m.props.Styles})
 	case navigate.Game:
-		return game.NewModel(game.Props{Styles: m.props.Styles})
+		props := game.Props{Styles: m.props.Styles}
+		if cfg, ok := nav.Config.(game.Config); ok {
+			props.ComputerColor = cfg.ComputerColor
+			props.SkillLevel = cfg.SkillLevel
+		}
+		return game.NewModel(props)
 	default: // navigate.Menu
 		return menu.NewModel(menu.Props{Styles: m.props.Styles})
 	}

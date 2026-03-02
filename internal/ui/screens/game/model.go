@@ -492,6 +492,45 @@ func overlayCenter(bg, fg string) string {
 	return strings.Join(bgLines, "\n")
 }
 
+var pieceValues = map[chess.PieceType]int{
+	chess.Queen:  9,
+	chess.Rook:   5,
+	chess.Bishop: 3,
+	chess.Knight: 3,
+	chess.Pawn:   1,
+}
+
+// materialAdvantage returns how many points color is ahead (negative = behind).
+func materialAdvantage(pos *chess.Position, color chess.Color) int {
+	score := 0
+	for _, p := range pos.Board().SquareMap() {
+		v := pieceValues[p.Type()]
+		if p.Color() == color {
+			score += v
+		} else {
+			score -= v
+		}
+	}
+	return score
+}
+
+// materialAnnotation renders the viewing player's material advantage at a
+// constant width so the board never shifts sideways as digits change.
+// "▲ +N" in green when ahead; "▼ -N" in red when behind; blank space when equal.
+func materialAnnotation(pos *chess.Position, viewColor chess.Color) string {
+	const fixedWidth = 6 // covers "▲ +39" (the realistic maximum) plus one spare
+	base := lipgloss.NewStyle().Width(fixedWidth)
+	adv := materialAdvantage(pos, viewColor)
+	switch {
+	case adv > 0:
+		return base.Foreground(lipgloss.Color("#52C452")).Render(fmt.Sprintf("▲ +%d", adv))
+	case adv < 0:
+		return base.Foreground(lipgloss.Color("#E05252")).Render(fmt.Sprintf("▼ -%d", -adv))
+	default:
+		return base.Foreground(lipgloss.Color("#666666")).Render("~")
+	}
+}
+
 func panelBorderStyle(focused bool) lipgloss.Style {
 	color := lipgloss.Color("#444444")
 	if focused {
@@ -520,10 +559,19 @@ func (m Model) View() string {
 			opts.LastMoveTo = &to
 		}
 	}
-	indicator := lipgloss.NewStyle().Height(1).Render(gameIndicator(m.game, s, m.thinking))
-	boardView := board.Render(m.game.Position(), s.Board, opts)
+	pos := m.game.Position()
+	opts.BottomAnnotation = materialAnnotation(pos, m.viewColor)
 
-	boardContent := lipgloss.JoinVertical(lipgloss.Center, boardView, indicator)
+	boardView := board.Render(pos, s.Board, opts)
+
+	// The bottom rank row is wider than the rest due to the material annotation.
+	// Measure the first rank row (no annotation) to get the true board width for
+	// centering the indicator underneath it.
+	boardOnlyW := lipgloss.Width(strings.SplitN(boardView, "\n", 2)[0])
+	indicator := lipgloss.NewStyle().
+		Width(boardOnlyW).Align(lipgloss.Center).Height(1).
+		Render(gameIndicator(m.game, s, m.thinking))
+	boardContent := lipgloss.JoinVertical(lipgloss.Left, boardView, indicator)
 	boardPanel := panelBorderStyle(m.focus == boardFocus).Render(boardContent)
 
 	boardPanelW := lipgloss.Width(boardPanel)

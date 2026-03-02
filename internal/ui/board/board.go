@@ -51,16 +51,19 @@ var pieces = map[chess.PieceType]string{
 }
 
 type RenderOptions struct {
-	Cursor        chess.Square
-	Selected      *chess.Square
-	ValidDests    map[chess.Square]bool
-	FlipBoard     bool
-	LastMoveFrom  *chess.Square
-	LastMoveTo    *chess.Square
+	Cursor          chess.Square
+	Selected        *chess.Square
+	ValidDests      map[chess.Square]bool
+	FlipBoard       bool
+	LastMoveFrom    *chess.Square
+	LastMoveTo      *chess.Square
+	TopAnnotation   string // rendered to the right of the top rank row
+	BottomAnnotation string // rendered to the right of the bottom rank row
 }
 
-// Render draws the board. When FlipBoard is false the view is from White's
-// side (rank 1 at the bottom); when true it is from Black's side.
+// Render draws the board with rank labels on the left and file labels on the
+// bottom only. When FlipBoard is false the view is from White's side (rank 1
+// at the bottom); when true it is from Black's side.
 func Render(pos *chess.Position, s Styles, opts RenderOptions) string {
 	b := pos.Board()
 	cursorFile := opts.Cursor.File()
@@ -68,17 +71,24 @@ func Render(pos *chess.Position, s Styles, opts RenderOptions) string {
 	rankOrder, fileOrder := boardOrder(opts.FlipBoard)
 
 	var sb strings.Builder
-	sb.WriteString(fileLabels(s, cursorFile, fileOrder))
-	sb.WriteString("\n")
 
-	for _, r := range rankOrder {
+	for i, r := range rankOrder {
 		rankLabel := s.labelStyle(r == cursorRank)
 		sb.WriteString(rankLabel.Render(fmt.Sprintf("%d ", int(r)+1)))
 		for _, f := range fileOrder {
 			sq := chess.NewSquare(f, r)
 			sb.WriteString(renderSquare(sq, b.Piece(sq), opts, s))
 		}
-		sb.WriteString(rankLabel.Render(fmt.Sprintf(" %d", int(r)+1)))
+		switch i {
+		case 0:
+			if opts.TopAnnotation != "" {
+				sb.WriteString("  " + opts.TopAnnotation)
+			}
+		case len(rankOrder) - 1:
+			if opts.BottomAnnotation != "" {
+				sb.WriteString("  " + opts.BottomAnnotation)
+			}
+		}
 		sb.WriteString("\n")
 	}
 

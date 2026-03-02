@@ -9,19 +9,25 @@ import (
 )
 
 type Styles struct {
-	LightSquare  lipgloss.Style
-	DarkSquare   lipgloss.Style
-	CursorLight  lipgloss.Style
-	CursorDark   lipgloss.Style
-	Label        lipgloss.Style
+	LightSquare   lipgloss.Style
+	DarkSquare    lipgloss.Style
+	CursorLight   lipgloss.Style
+	CursorDark    lipgloss.Style
+	SelectedLight lipgloss.Style
+	SelectedDark  lipgloss.Style
+	Label         lipgloss.Style
 }
 
 func NewStyles(renderer *lipgloss.Renderer) Styles {
+	cursorLight := lipgloss.Color("#CCD277")
+	cursorDark := lipgloss.Color("#AAA23A")
 	return Styles{
-		LightSquare: renderer.NewStyle().Background(lipgloss.Color("#F0D9B5")),
-		DarkSquare:  renderer.NewStyle().Background(lipgloss.Color("#B58863")),
-		CursorLight: renderer.NewStyle().Background(lipgloss.Color("#CCD277")),
-		CursorDark:  renderer.NewStyle().Background(lipgloss.Color("#AAA23A")),
+		LightSquare:   renderer.NewStyle().Background(lipgloss.Color("#F0D9B5")),
+		DarkSquare:    renderer.NewStyle().Background(lipgloss.Color("#B58863")),
+		CursorLight:   renderer.NewStyle().Background(cursorLight),
+		CursorDark:    renderer.NewStyle().Background(cursorDark),
+		SelectedLight: renderer.NewStyle().Background(lipgloss.Color("#F6F669")),
+		SelectedDark:  renderer.NewStyle().Background(lipgloss.Color("#D4AC00")),
 		Label: renderer.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#9b9b9b", Dark: "#5c5c5c"}),
 	}
@@ -45,8 +51,14 @@ var blackPieces = map[chess.PieceType]string{
 	chess.Pawn:   "♙",
 }
 
+type RenderOptions struct {
+	Cursor     chess.Square
+	Selected   *chess.Square
+	ValidDests map[chess.Square]bool
+}
+
 // Render draws the board from White's perspective.
-func Render(pos *chess.Position, s Styles, cursor chess.Square) string {
+func Render(pos *chess.Position, s Styles, opts RenderOptions) string {
 	b := pos.Board()
 	var sb strings.Builder
 
@@ -57,7 +69,7 @@ func Render(pos *chess.Position, s Styles, cursor chess.Square) string {
 		sb.WriteString(s.Label.Render(fmt.Sprintf("%d ", int(r)+1)))
 		for f := chess.FileA; f <= chess.FileH; f++ {
 			sq := chess.NewSquare(f, r)
-			sb.WriteString(renderSquare(sq, b.Piece(sq), cursor, s))
+			sb.WriteString(renderSquare(sq, b.Piece(sq), opts, s))
 		}
 		sb.WriteString(s.Label.Render(fmt.Sprintf(" %d", int(r)+1)))
 		sb.WriteString("\n")
@@ -76,15 +88,30 @@ func fileLabels(s Styles) string {
 	return sb.String()
 }
 
-func renderSquare(sq chess.Square, piece chess.Piece, cursor chess.Square, s Styles) string {
+func renderSquare(sq chess.Square, piece chess.Piece, opts RenderOptions, s Styles) string {
 	f, r := sq.File(), sq.Rank()
 	isLight := (int(f)+int(r))%2 == 1
+	isCursor := sq == opts.Cursor
+	isSelected := opts.Selected != nil && sq == *opts.Selected
+	isValidDest := opts.ValidDests[sq]
 
 	var bg lipgloss.Style
 	switch {
-	case sq == cursor && isLight:
+	case isCursor && isValidDest && isLight:
+		bg = s.SelectedLight
+	case isCursor && isValidDest:
+		bg = s.SelectedDark
+	case isCursor && isLight:
 		bg = s.CursorLight
-	case sq == cursor:
+	case isCursor:
+		bg = s.CursorDark
+	case isSelected && isLight:
+		bg = s.SelectedLight
+	case isSelected:
+		bg = s.SelectedDark
+	case isValidDest && isLight:
+		bg = s.CursorLight
+	case isValidDest:
 		bg = s.CursorDark
 	case isLight:
 		bg = s.LightSquare

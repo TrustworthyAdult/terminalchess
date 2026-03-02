@@ -1,8 +1,12 @@
 package game
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/notnil/chess"
@@ -72,6 +76,8 @@ type Model struct {
 	perspective chess.Color
 	help        help.Model
 	focus       panelFocus
+	moveHistory viewport.Model
+	termWidth   int
 }
 
 func NewModel(p Props) Model {
@@ -81,12 +87,33 @@ func NewModel(p Props) Model {
 		cursor:      chess.A1,
 		perspective: chess.White,
 		help:        help.New(),
+		moveHistory: newMoveHistoryViewport(p.Styles),
 	}
+}
+
+// newMoveHistoryViewport creates a viewport sized to match the board panel
+// height. The height is computed from a dummy render so GotoBottom works
+// correctly in Update before the first View call.
+func newMoveHistoryViewport(s styles.Styles) viewport.Model {
+	dummyBoard := board.Render(chess.NewGame().Position(), s.Board, board.RenderOptions{})
+	dummyInd := lipgloss.NewStyle().Height(1).Render("")
+	dummyContent := lipgloss.JoinVertical(lipgloss.Center, dummyBoard, dummyInd)
+	dummyPanel := panelBorderStyle(false).Render(dummyContent)
+	const vOverhead = 4
+	innerH := lipgloss.Height(dummyPanel) - vOverhead
+	if innerH < 2 {
+		innerH = 10
+	}
+	return viewport.New(20, innerH-1) // -1 for title row
 }
 
 func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.termWidth = wsm.Width
+	}
+
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch {
 		case key.Matches(k, keys.Quit):
@@ -104,6 +131,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				return m, navigate.To(navigate.Menu)
 			}
+		case m.focus == moveListFocus && key.Matches(k, keys.Up):
+			m.moveHistory.ScrollUp(1)
+		case m.focus == moveListFocus && key.Matches(k, keys.Down):
+			m.moveHistory.ScrollDown(1)
 		case m.focus == boardFocus && key.Matches(k, keys.Flip):
 			if m.perspective == chess.White {
 				m.perspective = chess.Black
@@ -146,6 +177,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = nil
 				m.validDests = nil
 				m.perspective = m.game.Position().Turn()
+				m.moveHistory.SetContent(strings.Join(moveHistoryLines(m.game), "\n"))
+				m.moveHistory.GotoBottom()
 			} else {
 				// Try to reselect another own piece; deselects if cursor is elsewhere.
 				m.selected, m.validDests = trySelect(m.game, m.cursor)
@@ -180,21 +213,59 @@ func (m Model) View() string {
 	boardContent := lipgloss.JoinVertical(lipgloss.Center, boardView, indicator)
 	boardPanel := panelBorderStyle(m.focus == boardFocus).Render(boardContent)
 
+	boardPanelW := lipgloss.Width(boardPanel)
 	boardH := lipgloss.Height(boardPanel)
 	const vOverhead = 4 // 2 border rows + 2 padding rows per panel
 	innerH := boardH - vOverhead
-	if innerH < 0 {
-		innerH = 0
+	if innerH < 2 {
+		innerH = 2
 	}
 
-	chatContent := lipgloss.NewStyle().Height(innerH).Render("Chat")
-	moveHistoryContent := lipgloss.NewStyle().Height(innerH).Render("Move History")
-	chatPanel := panelBorderStyle(m.focus == chatFocus).Render(chatContent)
+	sideInnerW := (m.termWidth - boardPanelW) / 2 - 6 // 6 = border(2) + padding(4)
+	if sideInnerW < 15 {
+		sideInnerW = 15
+	}
+
+	// Apply alternating row backgrounds to move history content.
+	evenRow := lipgloss.NewStyle().Width(sideInnerW).Background(lipgloss.Color("#1e1e1e"))
+	oddRow := lipgloss.NewStyle().Width(sideInnerW).Background(lipgloss.Color("#2a2a2a"))
+	lines := moveHistoryLines(m.game)
+	for i, line := range lines {
+		if i%2 == 0 {
+			lines[i] = evenRow.Render(line)
+		} else {
+			lines[i] = oddRow.Render(line)
+		}
+	}
+	m.moveHistory.Width = sideInnerW
+	m.moveHistory.Height = innerH - 1 // -1 for title row
+	m.moveHistory.SetContent(strings.Join(lines, "\n"))
+
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#aaaaaa")).Render("Move History")
+	moveHistoryContent := lipgloss.JoinVertical(lipgloss.Left, title, m.moveHistory.View())
 	moveHistoryPanel := panelBorderStyle(m.focus == moveListFocus).Render(moveHistoryContent)
+
+	chatContent := lipgloss.NewStyle().Width(sideInnerW).Height(innerH).Render("Chat")
+	chatPanel := panelBorderStyle(m.focus == chatFocus).Render(chatContent)
 
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, chatPanel, boardPanel, moveHistoryPanel)
 	helpView := lipgloss.NewStyle().Height(2).Render(m.help.View(keys))
 	return lipgloss.JoinVertical(lipgloss.Left, panels, helpView)
+}
+
+func moveHistoryLines(g *chess.Game) []string {
+	history := g.MoveHistory()
+	an := chess.AlgebraicNotation{}
+	lines := make([]string, 0, len(history)/2+1)
+	for i := 0; i < len(history); i += 2 {
+		white := an.Encode(history[i].PrePosition, history[i].Move)
+		line := fmt.Sprintf("%d. %s", i/2+1, white)
+		if i+1 < len(history) {
+			line += "  " + an.Encode(history[i+1].PrePosition, history[i+1].Move)
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func gameIndicator(g *chess.Game, s styles.Styles) string {

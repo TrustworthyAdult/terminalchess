@@ -3,7 +3,9 @@ package root
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/notnil/chess"
 
+	"terminalchess/internal/ui/actor"
 	"terminalchess/internal/ui/navigate"
 	"terminalchess/internal/ui/screens/game"
 	"terminalchess/internal/ui/screens/menu"
@@ -61,12 +63,16 @@ func (m Model) makeScreen(nav navigate.Msg) tea.Model {
 	case navigate.Setup:
 		return setup.NewModel(setup.Props{Styles: m.props.Styles})
 	case navigate.Game:
-		props := game.Props{Styles: m.props.Styles}
-		if cfg, ok := nav.Config.(game.Config); ok {
-			props.ComputerColor = cfg.ComputerColor
-			props.SkillLevel = cfg.SkillLevel
+		white, black := actor.Player(actor.Local{}), actor.Player(actor.Local{})
+		if cfg, ok := nav.Config.(game.Config); ok && cfg.ComputerColor != nil {
+			computer := actor.NewComputer(cfg.SkillLevel)
+			if *cfg.ComputerColor == chess.White {
+				white = computer
+			} else {
+				black = computer
+			}
 		}
-		return game.NewModel(props)
+		return game.NewModel(game.Props{Styles: m.props.Styles, White: white, Black: black})
 	default: // navigate.Menu
 		return menu.NewModel(menu.Props{Styles: m.props.Styles})
 	}

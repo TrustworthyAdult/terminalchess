@@ -118,7 +118,6 @@ type Model struct {
 	computerColor *chess.Color
 	skillLevel    int
 	engine        *uci.Engine
-	thinking      bool
 }
 
 func NewModel(p Props) Model {
@@ -236,13 +235,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.engine = msg.eng
 		if m.isComputerTurn() {
-			m.thinking = true
 			return m, engineMoveCmd(m.engine, m.game.Position(), m.skillLevel)
 		}
 		return m, nil
 
 	case engineMoveMsg:
-		m.thinking = false
 		if msg.err != nil || msg.move == nil {
 			return m, nil
 		}
@@ -297,7 +294,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.phase = playing
 					m.popupChoice = 0
 					if m.isComputerTurn() {
-						m.thinking = true
 						return m, engineMoveCmd(m.engine, m.game.Position(), m.skillLevel)
 					}
 				case 2: // Study
@@ -311,7 +307,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Block input while engine is thinking.
-		if m.thinking {
+		if m.isComputerTurn() {
 			return m, nil
 		}
 
@@ -385,7 +381,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.game.Outcome() != chess.NoOutcome {
 					m.phase = postGame
 				} else if m.isComputerTurn() {
-					m.thinking = true
 					return m, engineMoveCmd(m.engine, m.game.Position(), m.skillLevel)
 				}
 			} else {
@@ -570,7 +565,7 @@ func (m Model) View() string {
 	boardOnlyW := lipgloss.Width(strings.SplitN(boardView, "\n", 2)[0])
 	indicator := lipgloss.NewStyle().
 		Width(boardOnlyW).Align(lipgloss.Center).Height(1).
-		Render(gameIndicator(m.game, s, m.thinking))
+		Render(gameIndicator(m.game, s))
 	boardContent := lipgloss.JoinVertical(lipgloss.Left, boardView, indicator)
 	boardPanel := panelBorderStyle(m.focus == boardFocus).Render(boardContent)
 
@@ -633,15 +628,8 @@ func moveHistoryLines(g *chess.Game) []string {
 	return lines
 }
 
-func gameIndicator(g *chess.Game, s styles.Styles, thinking bool) string {
+func gameIndicator(g *chess.Game, s styles.Styles) string {
 	base := s.Body.Padding(0, 1)
-
-	if thinking {
-		return base.
-			Background(lipgloss.Color("#6b6b6b")).
-			Foreground(lipgloss.Color("#AAAAAA")).
-			Render("⏳  Thinking…")
-	}
 
 	if g.Outcome() != chess.NoOutcome && g.Method() == chess.Checkmate {
 		winner := "White"
